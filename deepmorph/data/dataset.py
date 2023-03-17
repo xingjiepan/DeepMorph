@@ -6,7 +6,7 @@ import torch
 class DiskDataset(torch.utils.data.Dataset):
     '''A dataset on disk.'''
     
-    def __init__(self, data_path):
+    def __init__(self, data_path, normalize_img=True):
         super().__init__()
         self.data_path = data_path
         
@@ -17,13 +17,16 @@ class DiskDataset(torch.utils.data.Dataset):
         self.files = []
         self.labels = []
         
-        for c in self.categories:
+        for i, c in enumerate(self.categories):
             for f in os.listdir(os.path.join(data_path, c)):
                 self.files.append(os.path.join(data_path, c, f))
-                self.labels.append(c)
+                self.labels.append(i)
                 
         self.files = np.array(self.files)
         self.labels = np.array(self.labels)
+        
+        # Normalize the image from [0, 255] to [0, 1]
+        self.normalize_img = normalize_img
         
     def __len__(self):
         return len(self.files)
@@ -37,7 +40,13 @@ class DiskDataset(torch.utils.data.Dataset):
             for f in file_subset:
                 X_list.append(skimage.io.imread(f))
         
-            return np.array(X_list), label_subset
+            if self.normalize_img:
+                return np.array(X_list, dtype=np.float32) / 255, label_subset
+            else:
+                return np.array(X_list), label_subset
         
         else:
-            return skimage.io.imread(file_subset), label_subset
+            if self.normalize_img:
+                return skimage.io.imread(file_subset).astype(np.float32) / 255, label_subset
+            else:
+                return skimage.io.imread(file_subset), label_subset
