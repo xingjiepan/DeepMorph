@@ -6,7 +6,7 @@ import torch
 class DiskDataset(torch.utils.data.Dataset):
     '''A dataset on disk.'''
     
-    def __init__(self, data_path, normalize_img=True):
+    def __init__(self, data_path, normalize_img=False):
         super().__init__()
         self.data_path = data_path
         
@@ -44,7 +44,7 @@ class DiskDataset(torch.utils.data.Dataset):
                 return np.array(X_list, dtype=np.float32) / 255, label_subset
             else:
                 return np.array(X_list), label_subset
-        
+                
         else:
             if self.normalize_img:
                 return skimage.io.imread(file_subset).astype(np.float32) / 255, label_subset
