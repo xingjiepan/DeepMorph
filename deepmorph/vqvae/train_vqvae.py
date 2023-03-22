@@ -10,16 +10,19 @@ import deepmorph.data.dataset
 import deepmorph.vqvae.vqvae
 
 
-def train(epoch, loader, model, optimizer, scheduler, device, normalization_factor=255):
+def train(epoch, loader, model, optimizer, scheduler, device, 
+          n_categories=1, normalization_factor=255):
     if deepmorph.distributed.is_primary():
         loader = tqdm(loader)
     
-    criterion = torch.nn.MSELoss()
+    recon_loss_fn = torch.nn.MSELoss()
+    classify_loss_fn = torch.nn.CrossEntropyLoss()
 
     latent_loss_weight = 0.25
-    sample_size = 25
+    classify_loss_weight = 0.5
 
-    n_samples, total_loss_sum, recon_loss_sum, latent_loss_sum = 0, 0, 0, 0
+    (n_samples, total_loss_sum, recon_loss_sum, latent_loss_sum,
+     t_classify_loss_sum, b_classify_loss_sum) = 0, 0, 0, 0, 0, 0
     
     for i, (img, y) in enumerate(loader):
         
@@ -28,11 +31,23 @@ def train(epoch, loader, model, optimizer, scheduler, device, normalization_fact
         # Send the image to GPU and normalize the image
         img = img.to(device, dtype=torch.float32)
         img = img / normalization_factor
+        y = y.to(device)
                 
-        out, latent_loss = model(img)
-        recon_loss = criterion(out, img)
+        out, latent_loss, class_t, class_b = model(img)
+        
+        # Calcualte the losses
+        recon_loss = recon_loss_fn(out, img)
         latent_loss = latent_loss.mean()
-        loss = recon_loss + latent_loss_weight * latent_loss
+        
+        if n_categories > 1:
+            t_classify_loss = classify_loss_fn(class_t, y)
+            b_classify_loss = classify_loss_fn(class_b, y)
+        else:
+            t_classify_loss = torch.tensor(0)
+            b_classify_loss = torch.tensor(0)
+        
+        loss = recon_loss + latent_loss_weight * latent_loss \
+               + classify_loss_weight * (t_classify_loss + b_classify_loss)
         loss.backward()
                         
         optimizer.step()
@@ -43,6 +58,8 @@ def train(epoch, loader, model, optimizer, scheduler, device, normalization_fact
             'total_loss_sum' : loss.item() * img.shape[0],
             'recon_loss_sum' : recon_loss.item() * img.shape[0],
             'latent_loss_sum' : latent_loss.item() * img.shape[0],
+            't_classify_loss_sum': t_classify_loss.item() * img.shape[0],
+            'b_classify_loss_sum': b_classify_loss.item() * img.shape[0],
         }
         comm = deepmorph.distributed.all_gather(comm)
                 
@@ -51,9 +68,12 @@ def train(epoch, loader, model, optimizer, scheduler, device, normalization_fact
             total_loss_sum += part["total_loss_sum"]
             recon_loss_sum += part["recon_loss_sum"]
             latent_loss_sum += part["latent_loss_sum"]
+            t_classify_loss_sum += part["t_classify_loss_sum"]
+            b_classify_loss_sum += part["b_classify_loss_sum"]
         
         
-    return n_samples, total_loss_sum, recon_loss_sum, latent_loss_sum
+    return (n_samples, total_loss_sum, recon_loss_sum, latent_loss_sum,
+           t_classify_loss_sum, b_classify_loss_sum)
 
 def build_model_and_train(args):
     '''Build and train a VQVAE model.
@@ -69,13 +89,14 @@ def build_model_and_train(args):
     loader = torch.utils.data.DataLoader(dataset, args['batch_size'], sampler=sampler, num_workers=0)
     
     # Build the model
-    model = deepmorph.vqvae.vqvae.VQVAE(in_channel=dataset[0][0].shape[0]).to(device)
+    model = deepmorph.vqvae.vqvae.VQVAE(in_channel=dataset[0][0].shape[0],
+                       n_categories=args['n_categories'], img_xy_shape=args['img_xy_shape']).to(device)
     
     if args['distributed']:
         model = torch.nn.parallel.DistributedDataParallel(
             model,
             device_ids=[deepmorph.distributed.get_local_rank()],
-            output_device=deepmorph.distributed.get_local_rank(),
+            output_device=deepmorph.distributed.get_local_rank()
         )
         
     optimizer = torch.optim.Adam(model.parameters(), lr=args['lr'])
@@ -85,24 +106,34 @@ def build_model_and_train(args):
     if deepmorph.distributed.is_primary():
         os.makedirs(os.path.join(args['output_path'], 'check_points'), exist_ok=True)
     
-    loss_history = {'total_loss': [], 'recon_loss' : [], 'latent_loss' : []}
+    loss_history = {'total_loss': [], 'recon_loss' : [], 'latent_loss' : [],
+                    't_classify_loss': [], 'b_classify_loss': []}
                      
     for i in range(args['epoch']):
-        n_samples, total_loss_sum, recon_loss_sum, latent_loss_sum = train(i, loader, model, optimizer, scheduler, device)
+        (n_samples, total_loss_sum, recon_loss_sum, latent_loss_sum, 
+         t_classify_loss_sum, b_classify_loss_sum) = train(i, loader, model, optimizer, scheduler, device,
+                            n_categories=args['n_categories'], normalization_factor=args['normalization_factor'])
         
         if n_samples > 0:
             loss_history['total_loss'].append(total_loss_sum / n_samples)
             loss_history['recon_loss'].append(recon_loss_sum / n_samples)
             loss_history['latent_loss'].append(latent_loss_sum / n_samples)
+            loss_history['t_classify_loss'].append(t_classify_loss_sum / n_samples)
+            loss_history['b_classify_loss'].append(b_classify_loss_sum / n_samples)
         
         if deepmorph.distributed.is_primary():
+            # Save the model
             torch.save(model.state_dict(), os.path.join(args['output_path'], 'check_points',
+                                                       'vqvae_latest.pt'))
+            
+            # Save the entire history, which takes a lot of disk space
+            if False:
+                torch.save(model.state_dict(), os.path.join(args['output_path'], 'check_points',
                                                         f'vqvae_{str(i + 1).zfill(4)}.pt'))
     
-    # Save the training history
-    if deepmorph.distributed.is_primary():
-        with open(os.path.join(args['output_path'], 'loss_history.json'), 'w') as f:
-            json.dump(loss_history, f)
+            # Save the training history
+            with open(os.path.join(args['output_path'], 'loss_history.json'), 'w') as f:
+                json.dump(loss_history, f)
     
 
 

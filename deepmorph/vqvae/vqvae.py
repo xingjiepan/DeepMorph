@@ -141,6 +141,20 @@ class Decoder(nn.Module):
     def forward(self, input):
         return self.blocks(input)
     
+class FCClassifier(nn.Module):
+    def __init__(self, in_dim, out_dim, hidden_dim=1024):
+        super().__init__()
+        self.flatten = nn.Flatten(start_dim=1)
+        self.fc = nn.Sequential(
+            nn.Linear(in_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, out_dim)
+        )
+    
+    def forward(self, X):
+        X = self.flatten(X)
+        return self.fc(X)
+
 class VQVAE(nn.Module):
     def __init__(
         self,
@@ -151,9 +165,13 @@ class VQVAE(nn.Module):
         embed_dim=64,
         n_embed=512,
         decay=0.99,
+        
+        n_categories=1,
+        img_xy_shape=(128, 128)
     ):
         super().__init__()
 
+        # Encoding
         self.enc_b = Encoder(in_channel, channel, n_res_block, n_res_channel, stride=4)
         self.enc_t = Encoder(channel, channel, n_res_block, n_res_channel, stride=2)
         self.quantize_conv_t = nn.Conv2d(channel, embed_dim, 1)
@@ -163,9 +181,19 @@ class VQVAE(nn.Module):
         )
         self.quantize_conv_b = nn.Conv2d(embed_dim + channel, embed_dim, 1)
         self.quantize_b = VectorQuantizer(embed_dim, n_embed)
+        
+        # Classification
+        self.n_categories = n_categories
+        if n_categories > 1:
+            x_shape, y_shape = img_xy_shape
+            self.classifier_t = FCClassifier(embed_dim * x_shape * y_shape // 64, n_categories)
+            self.classifier_b = FCClassifier(embed_dim * x_shape * y_shape // 16, n_categories)
+        
+        # Decoding
         self.upsample_t = nn.ConvTranspose2d(
             embed_dim, embed_dim, 4, stride=2, padding=1
         )
+        
         self.dec = Decoder(
             embed_dim + embed_dim,
             in_channel,
@@ -177,9 +205,10 @@ class VQVAE(nn.Module):
 
     def forward(self, input):
         quant_t, quant_b, diff, _, _ = self.encode(input)
+        class_t, class_b = self.classify(quant_t, quant_b)
         dec = self.decode(quant_t, quant_b)
 
-        return dec, diff
+        return dec, diff, class_t, class_b
 
     def encode(self, input):
         enc_b = self.enc_b(input)
@@ -200,6 +229,11 @@ class VQVAE(nn.Module):
 
         return quant_t, quant_b, diff_t + diff_b, id_t, id_b
 
+    def classify(self, quant_t, quant_b):
+        if self.n_categories == 1:
+            return 0, 0
+        return self.classifier_t(quant_t), self.classifier_b(quant_b)
+    
     def decode(self, quant_t, quant_b):
         upsample_t = self.upsample_t(quant_t)
         quant = torch.cat([upsample_t, quant_b], 1)
