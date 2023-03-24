@@ -10,8 +10,8 @@ import deepmorph.data.dataset
 import deepmorph.vqvae.vqvae
 
 
-def train(epoch, loader, model, optimizer, scheduler, device, 
-          n_categories=1, normalization_factor=255):
+def train(epoch, loader, model, optimizer, scheduler, device,
+          n_categories=1, normalization_factor=1):
     if deepmorph.distributed.is_primary():
         loader = tqdm(loader)
     
@@ -19,7 +19,7 @@ def train(epoch, loader, model, optimizer, scheduler, device,
     classify_loss_fn = torch.nn.CrossEntropyLoss()
 
     latent_loss_weight = 0.25
-    classify_loss_weight = 0.5
+    classify_loss_weight = 1
 
     (n_samples, total_loss_sum, recon_loss_sum, latent_loss_sum,
      t_classify_loss_sum, b_classify_loss_sum) = 0, 0, 0, 0, 0, 0
@@ -49,7 +49,9 @@ def train(epoch, loader, model, optimizer, scheduler, device,
         loss = recon_loss + latent_loss_weight * latent_loss \
                + classify_loss_weight * (t_classify_loss + b_classify_loss)
         loss.backward()
-                        
+        
+        if scheduler is not None:
+            scheduler.step()
         optimizer.step()
                 
         # Record the loss history
@@ -100,7 +102,13 @@ def build_model_and_train(args):
         )
         
     optimizer = torch.optim.Adam(model.parameters(), lr=args['lr'])
+    
+    # Anneal the learning rate if required
     scheduler = None
+    if args.get('anneal_lr', False):
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,
+                              T_max = args['epoch'], # Maximum number of iterations.
+                              eta_min = 0.1 * args['lr']) # Minimum learning rate.
     
     # Train the model
     if deepmorph.distributed.is_primary():
