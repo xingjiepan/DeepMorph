@@ -116,7 +116,9 @@ def build_model_and_train(args):
     
     loss_history = {'total_loss': [], 'recon_loss' : [], 'latent_loss' : [],
                     't_classify_loss': [], 'b_classify_loss': []}
-                     
+                    
+    best_loss = np.float('inf')
+        
     for i in range(args['epoch']):
         (n_samples, total_loss_sum, recon_loss_sum, latent_loss_sum, 
          t_classify_loss_sum, b_classify_loss_sum) = train(i, loader, model, optimizer, scheduler, device,
@@ -133,6 +135,11 @@ def build_model_and_train(args):
             # Save the model
             torch.save(model.state_dict(), os.path.join(args['output_path'], 'check_points',
                                                        'vqvae_latest.pt'))
+            
+            if best_loss > loss_history['total_loss'][-1]:
+                best_loss = loss_history['total_loss'][-1]
+                torch.save(model.state_dict(), os.path.join(args['output_path'], 'check_points',
+                                                       'vqvae_best.pt'))
             
             # Save the entire history, which takes a lot of disk space
             if False:

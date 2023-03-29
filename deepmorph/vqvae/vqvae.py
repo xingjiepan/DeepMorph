@@ -186,8 +186,10 @@ class VQVAE(nn.Module):
         self.n_categories = n_categories
         if n_categories > 1:
             x_shape, y_shape = img_xy_shape
-            self.classifier_t = FCClassifier(embed_dim * x_shape * y_shape // 64, n_categories)
-            self.classifier_b = FCClassifier(embed_dim * x_shape * y_shape // 16, n_categories)
+            self.classifier_t = FCClassifier(embed_dim * x_shape * y_shape // 64, 
+                                             n_categories, hidden_dim=n_categories)
+            self.classifier_b = FCClassifier(embed_dim * x_shape * y_shape // 16, 
+                                             n_categories, hidden_dim=n_categories)
         
         # Decoding
         self.upsample_t = nn.ConvTranspose2d(
