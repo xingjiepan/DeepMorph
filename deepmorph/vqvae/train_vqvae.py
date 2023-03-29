@@ -4,11 +4,24 @@ import json
 import numpy as np
 from tqdm import tqdm
 import torch
+import torchvision.transforms
 
 import deepmorph.distributed
 import deepmorph.data.dataset
 import deepmorph.vqvae.vqvae
 
+
+def transform_img_stack(img_stack):
+    
+    policy = torchvision.transforms.Compose([
+        torchvision.transforms.RandomApply(
+            transforms=[torchvision.transforms.GaussianBlur(5, sigma=(0.1, 2))], p=0.5),
+        torchvision.transforms.RandomVerticalFlip(p=0.5),
+        torchvision.transforms.RandomAffine(degrees=(-180, 180), translate=(0.2, 0.2))
+    ])
+    for i in range(len(img_stack)):
+        img_stack[i] = policy(img_stack[i])
+    
 
 def train(epoch, loader, model, optimizer, scheduler, device,
           n_categories=1, normalization_factor=1):
@@ -31,6 +44,8 @@ def train(epoch, loader, model, optimizer, scheduler, device,
         # Send the image to GPU and normalize the image
         img = img.to(device, dtype=torch.float32)
         img = img / normalization_factor
+        transform_img_stack(img)
+
         y = y.to(device)
                 
         out, latent_loss, class_t, class_b = model(img)
