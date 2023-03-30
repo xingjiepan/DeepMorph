@@ -13,6 +13,7 @@ import deepmorph.vqvae.vqvae
 
 def transform_img_stack(img_stack):
     
+    # Transform the images
     policy = torchvision.transforms.Compose([
         torchvision.transforms.RandomApply(
             transforms=[torchvision.transforms.GaussianBlur(5, sigma=(0.1, 2))], p=0.5),
@@ -21,6 +22,10 @@ def transform_img_stack(img_stack):
     ])
     for i in range(len(img_stack)):
         img_stack[i] = policy(img_stack[i])
+        
+    # Randomly dropout channels
+    dropout = torch.nn.Dropout2d(p=0.05, inplace=True)
+    dropout(img_stack)
     
 
 def train(epoch, loader, model, optimizer, scheduler, device,
