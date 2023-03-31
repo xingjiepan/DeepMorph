@@ -1,7 +1,36 @@
 import os
+import shutil
+
 import numpy as np
 import skimage.io
 import torch
+
+
+def random_split_dataset(input_dataset_path, output_path, ratios=[0.8, 0.1, 0.1]):
+    '''Randomly split a dataset in to the train, validation and test sets.'''
+    
+    datasets = ['train', 'validation', 'test']
+    categories = os.listdir(input_dataset_path)
+    ratios = np.array(ratios) / np.sum(ratios)
+
+    for ds in datasets:
+        for c in categories:
+            os.makedirs(os.path.join(output_path, ds, c), exist_ok=False)
+    
+    # Evenly split for each category
+    for c in categories:
+        files = os.listdir(os.path.join(input_dataset_path, c))
+        np.random.shuffle(files)
+    
+        seps = [0] + [int(r * len(files)) for r in np.cumsum(ratios)]
+        
+        for i in range(len(datasets)):
+            selected_files = files[seps[i] : seps[i + 1]]
+            for f in selected_files:
+                shutil.copy(os.path.join(input_dataset_path, c, f),
+                            os.path.join(output_path, datasets[i], c, f))
+    
+    
 
 class DiskDataset(torch.utils.data.Dataset):
     '''A dataset on disk.'''
