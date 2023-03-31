@@ -11,7 +11,7 @@ import deepmorph.data.dataset
 import deepmorph.vqvae.vqvae
 
 
-def transform_img_stack(img_stack, p_channel_dropout=0):
+def transform_img_stack(img_stack):
     
     # Transform the images
     policy = torchvision.transforms.Compose([
@@ -22,11 +22,6 @@ def transform_img_stack(img_stack, p_channel_dropout=0):
     ])
     for i in range(len(img_stack)):
         img_stack[i] = policy(img_stack[i])
-        
-    # Randomly dropout channels if required
-    if p_channel_dropout > 0:
-        dropout = torch.nn.Dropout2d(p=p_channel_dropout, inplace=True)
-        dropout(img_stack)
         
 
 def calc_losses(loader, model, device, n_categories=1, normalization_factor=1):
