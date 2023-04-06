@@ -154,6 +154,11 @@ class FCClassifier(nn.Module):
     def forward(self, X):
         X = self.flatten(X)
         return self.fc(X)
+    
+    def generate_embedding(self, X):
+        X = self.flatten(X)
+        X = self.fc[0](X)
+        return self.fc[1](X)
 
 class VQVAE(nn.Module):
     def __init__(
