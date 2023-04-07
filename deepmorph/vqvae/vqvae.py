@@ -170,7 +170,8 @@ class VQVAE(nn.Module):
         embed_dim=64,
         n_embed=512,
         decay=0.99,
-        
+        classifier_hidden_dim=1024,
+
         n_categories=1,
         img_xy_shape=(128, 128)
     ):
@@ -192,9 +193,9 @@ class VQVAE(nn.Module):
         if n_categories > 1:
             x_shape, y_shape = img_xy_shape
             self.classifier_t = FCClassifier(embed_dim * x_shape * y_shape // 64, 
-                                             n_categories, hidden_dim=1024)
+                                             n_categories, hidden_dim=classifier_hidden_dim)
             self.classifier_b = FCClassifier(embed_dim * x_shape * y_shape // 16, 
-                                             n_categories, hidden_dim=1024)
+                                             n_categories, hidden_dim=classifier_hidden_dim)
         
         # Decoding
         self.upsample_t = nn.ConvTranspose2d(
