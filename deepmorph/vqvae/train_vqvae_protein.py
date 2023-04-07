@@ -198,7 +198,14 @@ def build_model_and_train(args):
                                         n_embed=256,
                                         classifier_hidden_dim=512, 
                                         n_categories=args['n_categories'], 
-                                        img_xy_shape=args['img_xy_shape']).to(device)
+                                        img_xy_shape=args['img_xy_shape'])
+    
+    if 'checkpoint_to_resume' in args:
+        pretrained_dict = torch.load(args['checkpoint_to_resume'])
+        pretrained_dict = {key.replace("module.", ""): value for key, value in pretrained_dict.items()}
+        model.load_state_dict(pretrained_dict)
+    
+    model = model.to(device)
     
     if args['distributed']:
         model = torch.nn.parallel.DistributedDataParallel(
@@ -220,7 +227,12 @@ def build_model_and_train(args):
     if deepmorph.distributed.is_primary():
         os.makedirs(os.path.join(args['output_path'], 'check_points'), exist_ok=True)
     
-    loss_history = {'train_total_loss': [], 'train_recon_loss' : [], 'train_latent_loss' : [],
+    # Initialize the training history recording
+    if 'log_file_to_resume' in args:
+        with open(args['log_file_to_resume'], 'r') as f:
+            loss_history = json.load(f)
+    else:
+        loss_history = {'train_total_loss': [], 'train_recon_loss' : [], 'train_latent_loss' : [],
                     'train_t_classify_loss': [], 'train_b_classify_loss': [],
                     'val_total_loss': [], 'val_recon_loss' : [], 'val_latent_loss' : [],
                     'val_t_classify_loss': [], 'val_b_classify_loss': [],
