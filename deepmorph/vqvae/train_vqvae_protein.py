@@ -23,19 +23,20 @@ def transform_img_stack(img_stack):
     for i in range(len(img_stack)):
         img_stack[i] = policy(img_stack[i])
         
-def split_protein_channels(img, y):
+def split_protein_channels(img, y, fiducial_channel):
     '''Split stacks of cell images by protein channels'''
     n_protein_channels = img.shape[1]
     img_split = img.reshape(img.shape[0] * img.shape[1], 1, img.shape[2], img.shape[3])
+    img_fiducial = torch.repeat_interleave(img[:, [fiducial_channel], :, :], img.shape[1], dim=0)
     
     y_split = []
     for i in range(img.shape[0]):
         for j in range(n_protein_channels):
             y_split.append(j)
     
-    return img_split, torch.tensor(y_split)
+    return torch.cat((img_split, img_fiducial), dim=1), torch.tensor(y_split)
 
-def calc_losses(loader, model, device, n_categories=1, normalization_factor=1):
+def calc_losses(loader, model, device, fiducial_channel=0, n_categories=1, normalization_factor=1):
     '''Calculate the losses on a dataset.'''
     model.eval()
     
@@ -53,7 +54,7 @@ def calc_losses(loader, model, device, n_categories=1, normalization_factor=1):
         model.zero_grad()
         
         # Send the image to GPU and normalize the image
-        img, y = split_protein_channels(img, y)
+        img, y = split_protein_channels(img, y, fiducial_channel)
         
         img = img.to(device, dtype=torch.float32)
         img = img / normalization_factor
@@ -100,7 +101,7 @@ def calc_losses(loader, model, device, n_categories=1, normalization_factor=1):
            t_classify_loss_sum, b_classify_loss_sum)
     
 def train(epoch, loader, model, optimizer, scheduler, device,
-          n_categories=1, normalization_factor=1):
+          fiducial_channel=0, n_categories=1, normalization_factor=1):
     '''Train one epoch.'''
     
     if deepmorph.distributed.is_primary():
@@ -120,7 +121,7 @@ def train(epoch, loader, model, optimizer, scheduler, device,
         model.zero_grad()
         
         # Send the image to GPU and normalize the image
-        img, y = split_protein_channels(img, y)
+        img, y = split_protein_channels(img, y, fiducial_channel)
         
         img = img.to(device, dtype=torch.float32)
         img = img / normalization_factor
@@ -190,7 +191,7 @@ def build_model_and_train(args):
     val_loader = torch.utils.data.DataLoader(val_dataset, args['batch_size'], sampler=val_sampler, num_workers=0)
     
     # Build the model
-    model = deepmorph.vqvae.vqvae.VQVAE(in_channel=1,
+    model = deepmorph.vqvae.vqvae.VQVAE(in_channel=2,
                                         channel=32,
                                         n_res_block=2,
                                         n_res_channel=16,
@@ -245,11 +246,13 @@ def build_model_and_train(args):
         (train_n_samples, train_total_loss_sum, train_recon_loss_sum, train_latent_loss_sum, 
          train_t_classify_loss_sum, train_b_classify_loss_sum) = train(
                             i, train_loader, model, optimizer, scheduler, device,
+                            fiducial_channel=args['fiducial_channel'],
                             n_categories=args['n_categories'], normalization_factor=args['normalization_factor'])
         
         # Calculate losses on the validation dataset
         (val_n_samples, val_total_loss_sum, val_recon_loss_sum, val_latent_loss_sum, 
-         val_t_classify_loss_sum, val_b_classify_loss_sum) = calc_losses(val_loader, model, device, 
+         val_t_classify_loss_sum, val_b_classify_loss_sum) = calc_losses(val_loader, model, device,
+                    fiducial_channel=args['fiducial_channel'],
                     n_categories=args['n_categories'], normalization_factor=args['normalization_factor'])
         
         # Record the train history
