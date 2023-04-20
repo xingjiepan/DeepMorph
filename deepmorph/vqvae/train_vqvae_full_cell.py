@@ -176,9 +176,23 @@ def build_model_and_train(args):
     val_sampler = deepmorph.distributed.data_sampler(val_dataset, shuffle=True, distributed=args['distributed'])
     val_loader = torch.utils.data.DataLoader(val_dataset, args['batch_size'], sampler=val_sampler, num_workers=0)
     
-    # Build the model
+    # Build the model        
     model = deepmorph.vqvae.vqvae.VQVAE(in_channel=train_dataset[0][0].shape[0],
-                       n_categories=args['n_categories'], img_xy_shape=args['img_xy_shape']).to(device)
+                                        channel=256,
+                                        n_res_block=4,
+                                        n_res_channel=64,
+                                        embed_dim=64,
+                                        n_embed=1024,
+                                        classifier_hidden_dim=1024, 
+                                        n_categories=args['n_categories'], 
+                                        img_xy_shape=args['img_xy_shape'])
+    
+    if 'checkpoint_to_resume' in args:
+        pretrained_dict = torch.load(args['checkpoint_to_resume'])
+        pretrained_dict = {key.replace("module.", ""): value for key, value in pretrained_dict.items()}
+        model.load_state_dict(pretrained_dict)
+    
+    model = model.to(device)
     
     if args['distributed']:
         model = torch.nn.parallel.DistributedDataParallel(
@@ -200,7 +214,12 @@ def build_model_and_train(args):
     if deepmorph.distributed.is_primary():
         os.makedirs(os.path.join(args['output_path'], 'check_points'), exist_ok=True)
     
-    loss_history = {'train_total_loss': [], 'train_recon_loss' : [], 'train_latent_loss' : [],
+    # Initialize the training history recording
+    if 'log_file_to_resume' in args:
+        with open(args['log_file_to_resume'], 'r') as f:
+            loss_history = json.load(f)
+    else:
+        loss_history = {'train_total_loss': [], 'train_recon_loss' : [], 'train_latent_loss' : [],
                     'train_t_classify_loss': [], 'train_b_classify_loss': [],
                     'val_total_loss': [], 'val_recon_loss' : [], 'val_latent_loss' : [],
                     'val_t_classify_loss': [], 'val_b_classify_loss': [],
