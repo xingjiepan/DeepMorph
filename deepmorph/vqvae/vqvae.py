@@ -60,6 +60,15 @@ class VectorQuantizer(nn.Module):
     def embed_code(self, embed_id):
         return F.embedding(embed_id, self.embed.transpose(0, 1))
     
+class MultiHeadVectorQuantizer(nn.Module):
+    '''Quantify vectors through multiple heads then combine the heads.
+    The rational is that for a deep image stack, multiple events may 
+    happen in a given 2D (x,y) coordinate. So it could be beneficial to
+    use multiple heads to model such behavior.
+    '''
+    def __init__():
+        pass
+    
 class ResBlock(nn.Module):
     def __init__(self, in_channel, channel):
         super().__init__()
@@ -144,7 +153,6 @@ class Decoder(nn.Module):
 class FCClassifier(nn.Module):
     def __init__(self, in_dim, out_dim, hidden_dim=1024):
         super().__init__()
-        self.flatten = nn.Flatten(start_dim=1)
         self.fc = nn.Sequential(
             nn.Linear(in_dim, hidden_dim),
             nn.ReLU(),
@@ -152,11 +160,9 @@ class FCClassifier(nn.Module):
         )
     
     def forward(self, X):
-        X = self.flatten(X)
         return self.fc(X)
     
     def generate_embedding(self, X):
-        X = self.flatten(X)
         X = self.fc[0](X)
         return self.fc[1](X)
 
@@ -173,6 +179,7 @@ class VQVAE(nn.Module):
         classifier_hidden_dim=1024,
 
         n_categories=1,
+        n_conditions=1,
         img_xy_shape=(128, 128)
     ):
         super().__init__()
@@ -190,12 +197,15 @@ class VQVAE(nn.Module):
         
         # Classification
         self.n_categories = n_categories
-        if n_categories > 1:
-            x_shape, y_shape = img_xy_shape
-            self.classifier_t = FCClassifier(embed_dim * x_shape * y_shape // 64, 
-                                             n_categories, hidden_dim=classifier_hidden_dim)
-            self.classifier_b = FCClassifier(embed_dim * x_shape * y_shape // 16, 
-                                             n_categories, hidden_dim=classifier_hidden_dim)
+        x_shape, y_shape = img_xy_shape
+        self.flatten = nn.Flatten(start_dim=1)
+        
+        self.classifier_p = FCClassifier(
+                    (embed_dim * x_shape * y_shape // 64) + (embed_dim * x_shape * y_shape // 16), 
+                     n_categories, hidden_dim=classifier_hidden_dim)
+            
+        self.classifier_c = FCClassifier(classifier_hidden_dim * n_categories,
+                                                n_conditions, hidden_dim=classifier_hidden_dim)
         
         # Decoding
         self.upsample_t = nn.ConvTranspose2d(
@@ -213,10 +223,10 @@ class VQVAE(nn.Module):
 
     def forward(self, input):
         quant_t, quant_b, diff, _, _ = self.encode(input)
-        class_t, class_b = self.classify(quant_t, quant_b)
+        class_p, class_c = self.classify(quant_t, quant_b)
         dec = self.decode(quant_t, quant_b)
 
-        return dec, diff, class_t, class_b
+        return dec, diff, class_p, class_c
 
     def encode(self, input):
         enc_b = self.enc_b(input)
@@ -238,9 +248,17 @@ class VQVAE(nn.Module):
         return quant_t, quant_b, diff_t + diff_b, id_t, id_b
 
     def classify(self, quant_t, quant_b):
-        if self.n_categories == 1:
-            return 0, 0
-        return self.classifier_t(quant_t), self.classifier_b(quant_b)
+        # Classify individual protein channels
+        z_features = torch.cat((self.flatten(quant_t), self.flatten(quant_b)), dim=1)            
+        cls_p = self.classifier_p(z_features)
+        
+        # Classify the entire cell
+        emb_p = self.classifier_p.generate_embedding(z_features)
+        emb_p = emb_p.reshape(-1, emb_p.shape[1] * self.n_categories)
+        
+        cls_c = self.classifier_c(emb_p)
+        
+        return cls_p, cls_c
     
     def decode(self, quant_t, quant_b):
         upsample_t = self.upsample_t(quant_t)
