@@ -156,6 +156,7 @@ class FCClassifier(nn.Module):
         self.fc = nn.Sequential(
             nn.Linear(in_dim, hidden_dim),
             nn.ReLU(),
+            #nn.Dropout(0),
             nn.Linear(hidden_dim, out_dim)
         )
     

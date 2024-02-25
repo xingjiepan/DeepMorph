@@ -68,7 +68,7 @@ def calc_losses(loader, model, device, fiducial_channel=0,
         recon_loss = recon_loss_fn(out, img)
         latent_loss = latent_loss.mean()
         
-        p_classify_loss = classify_loss_fn(class_p, y_prot)
+        p_classify_loss = classify_loss_fn(class_p, y_prot) * 2
         c_classify_loss = classify_loss_fn(class_c, y_cell) * n_categories
 
         loss = recon_loss + latent_loss_weight * latent_loss \
@@ -134,13 +134,14 @@ def train(epoch, loader, model, optimizer, scheduler, device,
         recon_loss = recon_loss_fn(out, img)
         latent_loss = latent_loss.mean()
         
-        p_classify_loss = classify_loss_fn(class_p, y_prot)
+        p_classify_loss = classify_loss_fn(class_p, y_prot) * 2
         c_classify_loss = classify_loss_fn(class_c, y_cell) * n_categories
         
         loss = recon_loss + latent_loss_weight * latent_loss \
                + classify_loss_weight * (p_classify_loss + c_classify_loss)
         loss.backward()
         
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=2)
         optimizer.step()
         if scheduler is not None:
             scheduler.step()
