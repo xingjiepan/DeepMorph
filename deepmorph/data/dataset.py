@@ -35,7 +35,7 @@ def random_split_dataset(input_dataset_path, output_path, ratios=[0.8, 0.1, 0.1]
 class DiskDataset(torch.utils.data.Dataset):
     '''A dataset on disk.'''
     
-    def __init__(self, data_path, normalize_img=False):
+    def __init__(self, data_path, normalize_img=False, file_type='tiff'):
         super().__init__()
         self.data_path = data_path
         
@@ -56,6 +56,8 @@ class DiskDataset(torch.utils.data.Dataset):
         
         # Normalize the image from [0, 255] to [0, 1]
         self.normalize_img = normalize_img
+
+        self.file_type = file_type
         
     def __len__(self):
         return len(self.files)
@@ -67,7 +69,7 @@ class DiskDataset(torch.utils.data.Dataset):
         if type(label_subset) is np.ndarray:
             X_list = []
             for f in file_subset:
-                X_list.append(skimage.io.imread(f))
+                X_list.append(self.load_image(f))
         
             if self.normalize_img:
                 return np.array(X_list, dtype=np.float32) / 255, label_subset
@@ -76,6 +78,14 @@ class DiskDataset(torch.utils.data.Dataset):
                 
         else:
             if self.normalize_img:
-                return skimage.io.imread(file_subset).astype(np.float32) / 255, label_subset
+                return self.load_image(file_subset).astype(np.float32) / 255, label_subset
             else:
-                return skimage.io.imread(file_subset), label_subset
+                return self.load_image(file_subset), label_subset
+
+    def load_image(self, file_path):
+        if self.file_type == 'tiff':
+            return skimage.io.imread(file_path)
+        elif self.file_type == 'npz':
+            return np.load(file_path)['x']
+        else:
+            raise Exception(f'Cannot load image file of type {self.file_type}')

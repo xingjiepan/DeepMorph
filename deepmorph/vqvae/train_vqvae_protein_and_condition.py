@@ -178,11 +178,11 @@ def build_model_and_train(args):
     args['distributed'] = deepmorph.distributed.get_world_size() > 1
     
     # Create the datasets
-    train_dataset = deepmorph.data.dataset.DiskDataset(args['train_data_path'])
+    train_dataset = deepmorph.data.dataset.DiskDataset(args['train_data_path'], file_type=args['file_type'])
     train_sampler = deepmorph.distributed.data_sampler(train_dataset, shuffle=True, distributed=args['distributed'])
     train_loader = torch.utils.data.DataLoader(train_dataset, args['batch_size'], sampler=train_sampler, num_workers=0)
     
-    val_dataset = deepmorph.data.dataset.DiskDataset(args['validation_data_path'])
+    val_dataset = deepmorph.data.dataset.DiskDataset(args['validation_data_path'], file_type=args['file_type'])
     val_sampler = deepmorph.distributed.data_sampler(val_dataset, shuffle=True, distributed=args['distributed'])
     val_loader = torch.utils.data.DataLoader(val_dataset, args['batch_size'], sampler=val_sampler, num_workers=0)
     
