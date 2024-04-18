@@ -37,7 +37,7 @@ def split_protein_channels(img, fiducial_channel):
     return torch.cat((img_split, img_fiducial), dim=1), torch.tensor(y_split)
 
 def calc_losses(loader, model, device, fiducial_channel=0, 
-                n_categories=1, n_conditions=1, normalization_factor=1):
+                p_classify_weight=2, c_classify_weight=2, normalization_factor=1):
     '''Calculate the losses on a dataset.'''
     model.eval()
     
@@ -68,8 +68,8 @@ def calc_losses(loader, model, device, fiducial_channel=0,
         recon_loss = recon_loss_fn(out, img)
         latent_loss = latent_loss.mean()
         
-        p_classify_loss = classify_loss_fn(class_p, y_prot) * 2
-        c_classify_loss = classify_loss_fn(class_c, y_cell) * n_categories
+        p_classify_loss = classify_loss_fn(class_p, y_prot) * p_classify_weight
+        c_classify_loss = classify_loss_fn(class_c, y_cell) * c_classify_weight
 
         loss = recon_loss + latent_loss_weight * latent_loss \
                + classify_loss_weight * (p_classify_loss + c_classify_loss)
@@ -99,7 +99,7 @@ def calc_losses(loader, model, device, fiducial_channel=0,
            p_classify_loss_sum, c_classify_loss_sum)
     
 def train(epoch, loader, model, optimizer, scheduler, device,
-          fiducial_channel=0, n_categories=1, n_conditions=1, normalization_factor=1):
+          fiducial_channel=0, p_classify_weight=2, c_classify_weight=2, normalization_factor=1):
     '''Train one epoch.'''
     
     if deepmorph.distributed.is_primary():
@@ -134,8 +134,8 @@ def train(epoch, loader, model, optimizer, scheduler, device,
         recon_loss = recon_loss_fn(out, img)
         latent_loss = latent_loss.mean()
         
-        p_classify_loss = classify_loss_fn(class_p, y_prot) * 2
-        c_classify_loss = classify_loss_fn(class_c, y_cell) * n_categories
+        p_classify_loss = classify_loss_fn(class_p, y_prot) * p_classify_weight
+        c_classify_loss = classify_loss_fn(class_c, y_cell) * c_classify_weight
         
         loss = recon_loss + latent_loss_weight * latent_loss \
                + classify_loss_weight * (p_classify_loss + c_classify_loss)
@@ -244,16 +244,16 @@ def build_model_and_train(args):
          train_p_classify_loss_sum, train_c_classify_loss_sum) = train(
                             i, train_loader, model, optimizer, scheduler, device,
                             fiducial_channel=args['fiducial_channel'],
-                            n_categories=args['n_categories'], 
-                            n_conditions=args['n_conditions'],
+                            p_classify_weight=args['p_classify_weight'], 
+                            c_classify_weight=args['c_classify_weight'],
                             normalization_factor=args['normalization_factor'])
         
         # Calculate losses on the validation dataset
         (val_n_samples, val_total_loss_sum, val_recon_loss_sum, val_latent_loss_sum, 
          val_p_classify_loss_sum, val_c_classify_loss_sum) = calc_losses(val_loader, model, device,
                     fiducial_channel=args['fiducial_channel'],
-                    n_categories=args['n_categories'],
-                    n_conditions=args['n_conditions'],
+                    p_classify_weight=args['p_classify_weight'], 
+                    c_classify_weight=args['c_classify_weight'],
                     normalization_factor=args['normalization_factor'])
         
         # Record the train history

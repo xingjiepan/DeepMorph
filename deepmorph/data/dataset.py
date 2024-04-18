@@ -6,7 +6,8 @@ import skimage.io
 import torch
 
 
-def random_split_dataset(input_dataset_path, output_path, ratios=[0.8, 0.1, 0.1]):
+def random_split_dataset(input_dataset_path, output_path, ratios=[0.8, 0.1, 0.1],
+                         exist_ok=False):
     '''Randomly split a dataset in to the train, validation and test sets.'''
     
     datasets = ['train', 'validation', 'test']
@@ -15,7 +16,7 @@ def random_split_dataset(input_dataset_path, output_path, ratios=[0.8, 0.1, 0.1]
 
     for ds in datasets:
         for c in categories:
-            os.makedirs(os.path.join(output_path, ds, c), exist_ok=False)
+            os.makedirs(os.path.join(output_path, ds, c), exist_ok=exist_ok)
     
     # Evenly split for each category
     for c in categories:
